@@ -1,0 +1,30 @@
+{
+    "meta" : {
+        "name"      : "noisr",
+        "authors"   : ["Telmo Viana Vaz"],
+        "dev_phase" : "(alpha)",
+        "version"   : "v.1",
+        "license"   : "Open Source",
+        "extension" : ".iad"
+    },
+    "settings" : {
+        "performance" : "high"
+    },
+    "main_window" : {
+        "width"     : 1000,
+        "height"    : 800,
+        "icon"      : "./data/icons/ic_avicon.svg",
+        "ic_size"   : 24
+    },
+    "env_paths" : {
+        "toolbars"  : "./configs/toolbars.json",
+        "logger"    : "./configs/logger.json",
+        "icons"     : "./data/icons/"
+    },
+    "notes_colors": {
+        "wheat"     : "#F5DEB3",
+        "lightcyan" : "#B5EAEA",
+        "mauve"     : "#E0B0FA",
+        "olivedrab" : "#9AC48A"
+    }
+}

@@ -1,0 +1,238 @@
+{
+    "file": {
+        "settings": {
+            "movable": "False",
+            "floatable": "False",
+            "position": "top"
+        },
+        "actions": [
+            {
+                "type": "button",
+                "name": "New File",
+                "icon": "./data/icons/ic_instance_new.svg",
+                "status": "Creates new .IAD instance",
+                "action": "doNothing"
+            },
+            {
+                "type": "button",
+                "name": "Save File",
+                "icon": "./data/icons/instance_save.svg",
+                "status": "Save this .IAD instance",
+                "action": "doNothing"
+            },
+            {
+                "type": "button",
+                "name": "Load File",
+                "icon": "./data/icons/instance_load.svg",
+                "status": "Loads a .IAD instance",
+                "action": "doNothing"
+            },
+            {
+                "type": "separator"
+            },
+            {
+                "type": "button",
+                "name": "Save Data CSV",
+                "icon": "./data/icons/save_data_csv.svg",
+                "status": "Saves data into a .CSV file",
+                "action": "saveCSV"
+            },
+            {
+                "type": "button",
+                "name": "Save Data TXT",
+                "icon": "./data/icons/save_data_txt.svg",
+                "status": "Saves data into a .TXT file",
+                "action": "saveTXT"
+            }
+        ]
+    },
+    "connection": {
+        "settings": {
+            "movable": "true",
+            "floatable": "True",
+            "position": "top"
+        },
+        "actions": [
+            {
+                "type": "button",
+                "@id": "btBoardInfo",
+                "name": "Board Info",
+                "icon": "./data/icons/info_board.svg",
+                "status": "Info about the board",
+                "action": "onBoardInfoClick"
+            },
+            {
+                "type": "button",
+                "name": "Connect",
+                "icon": "./data/icons/ic_info_connection.svg",
+                "status": "Connects to board",
+                "action": "onConnectButtonClick"
+            },
+            {
+                "type": "button",
+                "name": "Sync Ports",
+                "icon": "./data/icons/ic_sync_ports.svg",
+                "status": "Looks again for Arduino ports",
+                "action": "syncArduinoPorts"
+            },
+            {
+                "type": "combobox",
+                "@id": "combobox_connected_ports",
+                "name": "Items",
+                "status": "Select connected ports",
+                "action": "getArduinoPorts"
+            },
+            {
+                "type": "spinbox",
+                "@id": "readRateSpinbox",
+                "name": "Read Rate",
+                "setPrefix" : "Read Rate: ",
+                "setSuffix" : " [Hz]",
+                "status": "Listens to the port at this rate",
+                "value": "10",
+                "min": "1",
+                "max": "20",
+                "action": "setReadRate"
+            },
+            {
+                "type": "button",
+                "name": "Board Code",
+                "icon": "./data/icons/ic_code.svg",
+                "status": "Arduino code",
+                "action": "onBoardCodeClick"
+            }
+        ]
+    },
+    "workspace": {
+        "settings": {
+            "movable": "True",
+            "floatable": "True",
+            "position": "top"
+        },
+        "actions": [
+            {
+                "type": "button",
+                "name": "All notes",
+                "icon": "./data/icons/notes.svg",
+                "status": "All notes taken for this .IAD instance",
+                "action": "doNothing"
+            },
+            {
+                "type": "button",
+                "name": "Info",
+                "icon": "./data/icons/ic_info.svg",
+                "status": "Info about NOISR",
+                "action": "doNothing"
+            }
+        ]
+    },
+    "parameters": {
+        "settings": {
+            "position": "top",
+            "movable": "True",
+            "floatable": "true"
+        },
+        "actions": [
+            {
+                "type": "break"
+            },
+            {
+                "type" : "doublespinbox",
+                "@id" : "threshold_reference",
+                "name": "Threshold",
+                "setPrefix" : "Threshold: ",
+                "status" : "Threshold reference to be considered in numeric methods",
+                "value" : "1.40",
+                "min" : "-12.00",
+                "max" : "12.00",
+                "setDecimals" : "3",
+                "setSingleStep" : "0.25",
+                "valueChanged" : "updateThresholdLine"
+            },
+            {
+                "type" : "doublespinbox",
+                "@id" : "stabilization_deviation",
+                "name": "Stabilization",
+                "setPrefix" : "Stabilization: ",
+                "status": "Standard deviation to consider when checking for stabilization",
+                "value": "0.1",
+                "min": "0",
+                "setSingleStep" : "0.01",
+                "action": "setStabilizationDeviation"
+            }
+        ]
+    },
+    "controllers": {
+        "settings": {
+            "position": "bottom",
+            "movable": "True",
+            "floatable": "False"
+        },
+        "actions": [
+            {
+                "type": "spinbox",
+                "@id": "Yscale_min",
+                "name": "Y-scale minimum",
+                "setPrefix" : "Y-scale min: ",
+                "setSuffix" : " [V]",
+                "status": "Sets the Y-scale minimum in the oscilloscope",
+                "value": "-1",
+                "min": "-12",
+                "action": "setPlotterRange"
+            },
+            {
+                "type": "spinbox",
+                "@id": "Yscale_max",
+                "name": "Y-scale maximum",
+                "setPrefix" : "Y-scale max: ",
+                "setSuffix" : " [V]",
+                "status": "Sets the Y-scale maximum in the oscilloscope",
+                "value": "4",
+                "max": "12",
+                "action": "setPlotterRange"
+            },
+            {
+                "type": "button",
+                "@id": "auto_scale",
+                "name": "Auto Scale",
+                "icon": "./data/icons/ic_autoscale.svg",
+                "status": "Auto-scales Y-axis according to the max-min values in queue",
+                "action": "onAutoScaleClick"
+            }
+        ]
+    },
+    "numerics": {
+        "settings": {
+            "movable": "true",
+            "floatable": "True",
+            "position": "left"
+        },
+        "actions": [
+            {
+                "type": "button",
+                "name": "Moving Average",
+                "icon": "./data/icons/plot_mean.svg",
+                "status": "Shows moving average for the signal",
+                "action": "doNothing"
+            },
+            {
+                "type": "button",
+                "name": "Threshold",
+                "icon": "./data/icons/ic_threshold.svg",
+                "setCheckable" : "True",
+                "triggered" : "toggleThreshold",
+                "status": "Plots the threshold reference",
+                "action": "doNothing"
+            },
+            {
+                "type": "button",
+                "name": "Clamp function",
+                "icon": "./data/icons/ic_clamp_function.svg",
+                "status": "Plots the clamp function of the signal having threshold as reference",
+                "setCheckable" : "True",
+                "triggered" : "toggleClampFunction",
+                "action": "doNothing"
+            }
+        ]
+    }
+}
