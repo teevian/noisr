@@ -277,7 +277,7 @@ class NoiserGUI(QMainWindow):
         """
         self.log.i(_('CON_PORTS'))
         try:
-            ports = connection.getPorts(self.system)
+            ports = connection.getPorts()
             self.log.v(_('CON_OK_PORTS') + str(ports))
         except connection.PortError as err:
             self.log.x(err, _('CON_SOL_PORTS'))

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from msgid import egg
-import os, time
+import os, time, platform
 from msgid import _
 import serial
 import serial.tools.list_ports  # should pip install esptool (?)
@@ -48,7 +48,6 @@ class ReaderThread(QThread):
             QThread.msleep(1000 // self.rate)   # changes reading rate in real-time!
 
 
-
 class PortError(Exception):
     def __init__(self, message):
         self.message = message
@@ -68,27 +67,72 @@ class ConnectionTimeout(Exception):
 # Functions and utils
 ######################################################################
 
-def getPorts(system):
+def osIndependent(implementations : dict):
     """
-        Returns ports whose connection is made with Arduino - MacOS and Linux only; Windows is for humanities majors
+        A decorator that returns a function that selects the correct implementation based on the operating system.
+        
+        Args:
+            implementations (dict): A dictionary mapping operating system names to their corresponding implementations.
+            
+        Returns:
+            function: A function that selects the correct implementation based on the operating system.
+            
+        Raises:
+            OSError: If the operating system is not supported by the provided implementations.
     """
-    ports = []
-    if system.lower() == 'linux':       # Linux
-        matching_files = [f for f in os.scandir('/dev') if f.name.startswith('ttyACM')]
+    def wrapper(func):
+        def implementationSelector():
+            system = platform.system().lower()
+            if system in implementations:
+                return implementations[system]()
+            raise OSError('Unsupported operating system')
+        return implementationSelector
+    return wrapper
 
-        # create list of full file paths
-        for file in matching_files:
-            full_path = os.path.join('/dev', file.name)
-            ports.append(full_path)
-    elif system.lower() == 'darwin':    # MacOS
-        ports = [   
-            port.device
-            for port in serial.tools.list_ports.comports()
-            if 'Arduino' in port.description and 'usbmodem' in port.device
-        ]
-    if not ports:
-        raise PortError('Board not connected')
-    return ports
+
+def getPortsOnLinux():
+    """
+        Returns a list of all the available serial ports on a Linux system.
+        
+        Returns:
+            list: A list of all the available serial ports on a Linux system.
+        """
+    return [os.path.join('/dev', file_name) for file_name in os.listdir('/dev') if file_name.startswith('ttyACM')]
+
+
+def getPortsOnMac():
+    """
+        Returns a list of all the available serial ports on a Mac system.
+        
+        Returns:
+            list: A list of all the available serial ports on a Mac system.
+        """
+    return [port.device for port in serial.tools.list_ports.comports() if 'Arduino' in port.description and 'usbmodem' in port.device]
+
+
+def getPortsOnWindows():
+    """
+        Returns a list of all the available serial ports on a Windows system.
+        
+        Returns:
+            list: A list of all the available serial ports on a Windows system.
+    """
+    return [port.device for port in serial.tools.list_ports.comports() if 'Arduino' in port.description]
+
+
+@osIndependent({
+    'linux': getPortsOnLinux,
+    'darwin': getPortsOnMac,
+    'windows': getPortsOnWindows
+    })
+def getPorts():
+    """
+        Returns a list of all the available serial ports on the current system, regardless of the operating system.
+        
+        Returns:
+            list: A list of all the available serial ports on the current system.
+        """
+    pass
 
 
 def handshake(connection):
