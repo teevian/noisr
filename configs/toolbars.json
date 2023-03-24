@@ -73,7 +73,7 @@
                 "name": "Sync Ports",
                 "icon": "./data/icons/ic_sync_ports.svg",
                 "status": "Looks again for Arduino ports",
-                "action": "syncArduinoPorts"
+                "action": "updateArduinoPorts"
             },
             {
                 "type": "combobox",
@@ -84,7 +84,7 @@
             },
             {
                 "type": "spinbox",
-                "@id": "readRateSpinbox",
+                "@id": "spinbox_read_rate",
                 "name": "Read Rate",
                 "setPrefix" : "Read Rate: ",
                 "setSuffix" : " [Hz]",
@@ -138,7 +138,7 @@
             },
             {
                 "type" : "doublespinbox",
-                "@id" : "threshold_reference",
+                "@id" : "spinbox_threshold",
                 "name": "Threshold",
                 "setPrefix" : "Threshold: ",
                 "status" : "Threshold reference to be considered in numeric methods",
@@ -158,7 +158,7 @@
                 "value": "0.1",
                 "min": "0",
                 "setSingleStep" : "0.01",
-                "action": "setStabilizationDeviation"
+                "valueChanged" : "updateStabilizationDeviation"
             }
         ]
     },

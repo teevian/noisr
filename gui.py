@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 
+
+# oscilloscope picotech.com/ ; hantek
+
 import json, time, serial, csv
 import pyqtgraph as pg
 import factory, connection
@@ -8,7 +11,7 @@ import utils
 import numpy as np
 from collections import deque
 from platform import system
-from msgid import _
+from msgid import _, egg
 from PyQt5.QtCore import (
         QSize, Qt, QDateTime, QTimer
         )
@@ -57,6 +60,7 @@ class NoiserGUI(QMainWindow):
         self.is_saved   = False
         self.is_signal_stabilized = False
         self.serial_connection = None
+        self.connection = None
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.onReadStopButtonClick)
@@ -85,7 +89,6 @@ class NoiserGUI(QMainWindow):
 
         self.getArduinoPorts()
         self.onConnectButtonClick()
-
 
     ############################
     # Inner classes
@@ -156,9 +159,9 @@ class NoiserGUI(QMainWindow):
             try:
                 self.serial_connection = serial.Serial(
                     self.ids['combobox_connected_ports'].currentText(), 9600)
-                self.serial_thread = connection.ReaderThread(
+                self.serial_thread = connection.NOISRProtocol.PinReaderThread(
                     self.serial_connection,
-                    self.ids['readRateSpinbox'].value(),
+                    self.ids['spinbox_read_rate'].value(),
                     self)
                 self.serial_thread.data_ready.connect(self.update_plot)
 
@@ -177,7 +180,7 @@ class NoiserGUI(QMainWindow):
 
                 self.serial_thread.start()
                 self.__startReadingSetup()
-            except (connection.ConnectionError, serial.SerialException) as err:
+            except (connection.ReadFromSerialError, serial.SerialException) as err:
                 self.log.x(err)
         else:
             # Send command to Arduino to stop sending analog values
@@ -214,7 +217,7 @@ class NoiserGUI(QMainWindow):
         self.Yscale_min = self.ids['Yscale_min'].value()
         self.Yscale_max = self.ids['Yscale_max'].value()
 
-        # disallow inverting values
+        # prevents man-min from inverting order
         self.ids['Yscale_min'].setMaximum(self.Yscale_max - 1)
         self.ids['Yscale_max'].setMinimum(self.Yscale_min + 1)
 
@@ -239,9 +242,9 @@ class NoiserGUI(QMainWindow):
 
         self.setPlotterRange()
         self.statusbar.showMessage(_('STATUSBAR_SCALE_CHANGED') + str([self.Yscale_min, self.Yscale_max]), 1000)
-    
 
-    def onConnectButtonClick(self, baudrate=9600):
+
+    def onConnectButtonClick(self, baudrate : int=9600) -> None:
         """
             Opens connection to ackwonledge Arduino
         """
@@ -249,21 +252,19 @@ class NoiserGUI(QMainWindow):
             self.log.e(_('ERR_THREAD_RUNNING'))
             return
 
+        port = self.ids['combobox_connected_ports'].currentText()
+        if port == 'no board':
+            self.log.e(_('CON_SOL_PORTS'))
+            return
+
         try:
-            port = self.ids['combobox_connected_ports'].currentText()
-            if port != self.NO_BOARD:
-                with serial.Serial(port, baudrate) as serial_connection:
-                    self.serial_connection = serial_connection
-                    handshake = connection.handshake(self.serial_connection)
-                    self.log.v(_('CON_SERIAL_OK'))
-                    self.log.i(_('CON_ARDUINO_SAYS') + handshake)
-            else:
-                self.log.e(_('CON_ERR_PORTS'))
-        except (connection.ConnectionError, serial.serialutil.SerialException) as err:
-            self.log.x(err, _('CON_SOL_PORTS'))
+            response = connection.NOISRProtocol.handshake(port, baudrate, timeout=1)
+            self.log.i(_('CON_ARDUINO_SAYS') + egg(response))
+        except Exception as error:
+            self.log.x(error)
 
 
-    def syncArduinoPorts(self):
+    def updateArduinoPorts(self):
         """
             Syncs the combobox for ports for new ports
         """
@@ -273,21 +274,28 @@ class NoiserGUI(QMainWindow):
 
     def getArduinoPorts(self):
         """
-            Sets up the combobox with ports connected with Arduino.
+            Sets up the combobox with ports connected with Arduino
+
+            Returns:
+                The list of ports connected to Arduino (or ['no board'] if it finds no connection)
         """
         self.log.i(_('CON_PORTS'))
         try:
             ports = connection.getPorts()
+        except Exception as e:
+            self.log.x(e)
+
+        if ports:
             self.log.v(_('CON_OK_PORTS') + str(ports))
-        except connection.PortError as err:
-            self.log.x(err, _('CON_SOL_PORTS'))
-            return [_('NO_BOARD')]
+        else:
+            self.log.e(_('CON_SOL_PORTS'))
+            ports = [_('NO_BOARD')]
         return ports
 
 
     def closeEvent(self, event):
         """
-            Disallows the window to be closed while Serial thread is running
+            Disallow the window to be closed while Serial thread is running
         """
         #self.serial_reader.stop()
         #self.serial_reader.wait()
@@ -379,16 +387,15 @@ class NoiserGUI(QMainWindow):
         self.plotter.setLabel('bottom', 'Time', units='s', size='18pt')
         self.plotter.showGrid(x=True, y=True, alpha=0.7)
         self.plotter.setLimits(xMin = 0, yMin = -12, yMax = 12)
-        #self.plotter.setAspectLocked(lock=True, ratio=1)
-        self.plotter.setMouseEnabled(x=True,y=False) 
+        self.plotter.setMouseEnabled(x = True, y = False) 
 
         vb = self.plotter.getViewBox()                     
-        vb.setAspectLocked(lock=False)            
-        vb.setAutoVisible(y=1.0)                
-        vb.enableAutoRange(axis='y', enable=True)
+        vb.setAspectLocked(lock = False)            
+        vb.setAutoVisible(y = 1.0)                
+        vb.enableAutoRange(axis = 'y', enable = True)
 
         self.setPlotterRange()
-        self.setStabilizationDeviation()
+        self.updateStabilizationDeviation()
 
         # TODO CONSIDERATIONS for 'essential mode
         #self.plotter.setDownsampling(auto=True)
@@ -408,13 +415,14 @@ class NoiserGUI(QMainWindow):
         #self.average_function = self.plotter.plot(self.times, self.voltages, pen='w', width=2, name='Moving Average')
 
         self.threshold_line = pg.InfiniteLine(
-            angle=0, movable=True,
-            pen=pg.mkPen(color='r',
-            width=3,
-            style=Qt.DashLine))
+            angle = 0,
+            movable = True,
+            pen = pg.mkPen(color='r',
+            width = 3,
+            style = Qt.DashLine))
         self.threshold_line.sigDragged.connect(self.updateThresholdSpinBox)
 
-        self.threshold_line.setPos(float(self.ids['threshold_reference'].value()))
+        self.threshold_line.setPos(float(self.ids['spinbox_threshold'].value()))
         self.plotter.addItem(self.threshold_line)
 
         self.setThreshold()
@@ -442,7 +450,7 @@ class NoiserGUI(QMainWindow):
 
         if self.groupSchedule.isChecked() and not self.timer.isActive()\
             and (self.comboStartAt.currentText() == 'right away' or self.is_signal_stabilized):
-            
+
             unit_factor = 1000 if self.comboTimeUnits.currentText() == 's' else 1
             time = int(self.spinboxTime.value()) * unit_factor
             self.log.i(_('TIMER_START'))
@@ -476,7 +484,7 @@ class NoiserGUI(QMainWindow):
         self.table.scrollToBottom()
 
 
-    def moving_average(self, n=3):
+    def movingAverage(self, n=3):
         cumulative_sum = np.cumsum(np.insert(self.data_voltages_queue, 0, 0))
         return (cumulative_sum[n:] - cumulative_sum[:-n]) / float(n)
 
@@ -485,13 +493,19 @@ class NoiserGUI(QMainWindow):
         return self.threshold_reference if value >= self.threshold_reference else 0
 
 
+    def setThreshold(self):
+        """
+            Changes the threshold
+        """
+        self.threshold_reference = self.ids['spinbox_threshold'].value()
+
+
     def updateThresholdSpinBox(self):
         """
             Updates the threshold value if the threshold is manually moved
         """
         new_threshold = self.threshold_line.value()
-        self.ids['threshold_reference'].setValue(new_threshold)
-
+        self.ids['spinbox_threshold'].setValue(new_threshold)
 
     def updateThresholdLine(self, new_threshold):
         """
@@ -514,13 +528,6 @@ class NoiserGUI(QMainWindow):
         self.is_signal_stabilized = not self.is_signal_stabilized
 
 
-    def setThreshold(self):
-        """
-            Changes the threshold
-        """
-        self.threshold_reference = self.ids['threshold_reference'].value()
-
-
     def checkStabilization(self):
         """
             Checks if the signal is stabilized
@@ -529,12 +536,11 @@ class NoiserGUI(QMainWindow):
         return voltages_std_dev < self.stabilization_deviation
 
 
-    def setStabilizationDeviation(self):
+    def updateStabilizationDeviation(self):
         """
             Updates the stabilization value
         """
         self.stabilization_deviation = self.ids['stabilization_deviation'].value()
-        print(self.stabilization_deviation)
 
 
     def setReadRate(self, rate):
