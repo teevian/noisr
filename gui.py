@@ -60,7 +60,6 @@ class NoiserGUI(QMainWindow):
         self.is_saved   = False
         self.is_signal_stabilized = False
         self.serial_connection = None
-        self.connection = None
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.onReadStopButtonClick)
@@ -147,7 +146,7 @@ class NoiserGUI(QMainWindow):
     ############################
     # Event handling methods
     ############################
-    def onReadStopButtonClick(self):
+    def onReadStopButtonClick(self) -> None:
         """
             Activates (odd clicks) and interrupts (even clicks) receiving the data from arduino
         """
@@ -156,44 +155,52 @@ class NoiserGUI(QMainWindow):
             self.timer.stop()
 
         if not self.is_reading:
-            try:
-                self.serial_connection = serial.Serial(
-                    self.ids['combobox_connected_ports'].currentText(), 9600)
-                self.serial_thread = connection.NOISRProtocol.PinReaderThread(
-                    self.serial_connection,
-                    self.ids['spinbox_read_rate'].value(),
-                    self)
-                self.serial_thread.data_ready.connect(self.update_plot)
+            current_port = self.ids['combobox_connected_ports'].currentText()
+            if current_port != 'no board':
+                try:
+                    self.serial_connection = connection.NOISRProtocol(
+                        current_port, baudrate=9600, timeout=1)
 
-                self.serial_connection.write(b'\x01')
+                    self.serial_connection.startReading(
+                        self.selected_pin,
+                        self.ids['spinbox_read_rate'].value(),
+                        self.update_plot)
 
-                # wait for acknowledgement from Arduino for 5 seconds (timeoout)
-                timeout = time.time() + 5
-                while self.serial_connection.read() != b'\x06':
-                    if time.time() > timeout:
-                        self.log.e(_('CON_ERR_TIMEOUT'))
-                        self.log.i(_('CON_CLICK_AGAIN'))
-                        raise connection.ConnectionTimeout(_('CON_ERR_TIMEOUT'))
-
-                pin = self.reading_pin
-                self.serial_connection.write(pin.to_bytes(1, byteorder='little', signed=False))
-
-                self.serial_thread.start()
-                self.__startReadingSetup()
-            except (connection.ReadFromSerialError, serial.SerialException) as err:
-                self.log.x(err)
+                    self.__startReadingSetup()
+                except (connection.ReadFromSerialError, serial.SerialException) as err:
+                    self.log.x(err)
         else:
-            # Send command to Arduino to stop sending analog values
-            self.serial_connection.write(b'\x04')
+            self.serial_connection.stopReading()
+            self.serial_connection.close()
 
-            self.serial_thread.terminate()
             self.__stopReadingSetup()
-        
-        self.is_reading = not self.is_reading   # toggles every time button is clicked
+
+
+    def onConnectButtonClick(self, baudrate : int=9600) -> None:
+        """
+            Opens connection to ackwonledge Arduino
+        """
+        if self.is_reading:
+            self.log.e(_('ERR_THREAD_RUNNING'))
+            return
+
+        port = self.ids['combobox_connected_ports'].currentText()
+        if port == 'no board':
+            self.log.e(_('CON_SOL_PORTS'))
+            return
+
+        try:
+            self.log.i(_('CON_HANDSHAKE_PORT') + str(self.selected_pin))
+            response = connection.NOISRProtocol.handshake(port, baudrate, self.selected_pin, timeout=1)
+            self.log.i(_('CON_ARDUINO_SAYS') + egg(response))
+        except Exception as error:
+            self.log.x(error)
 
 
     def __startReadingSetup(self):
         self.log.i(_('READ_START'))
+
+        self.is_reading = True
 
         self.btPlayPause.setText("STOP")
         self.statusbar.setStyleSheet('background-color: rgb(118, 178, 87);')
@@ -203,6 +210,9 @@ class NoiserGUI(QMainWindow):
 
     def __stopReadingSetup(self):
         self.log.i(_('READ_STOP'))
+        self.log.i(_('CON_CLOSED'))
+
+        self.is_reading = False
 
         self.btPlayPause.setText('START')
         self.statusbar.setStyleSheet('background-color: rgb(0, 122, 204);')
@@ -210,7 +220,8 @@ class NoiserGUI(QMainWindow):
         self.setWindowTitle(self.title)
 
 
-    def setPlotterRange(self):
+    ## plot utils
+    def setPlotterYRange(self):
         """
             Changes scale of the plotter according to max and min values
         """
@@ -222,6 +233,13 @@ class NoiserGUI(QMainWindow):
         self.ids['Yscale_max'].setMinimum(self.Yscale_min + 1)
 
         self.plotter.setYRange(self.Yscale_min, self.Yscale_max, padding=0)
+
+
+    def setPlotterXRange(self):
+        """
+            Changes scale of the plotter according to the value
+        """
+        self.display_memory = self.ids['spinbox_display_memory'].value()
 
 
     def onAutoScaleClick(self):
@@ -240,28 +258,8 @@ class NoiserGUI(QMainWindow):
         else:
             self.log.i(_('PLOT_ERR_AUTOSCALE'))
 
-        self.setPlotterRange()
+        self.setPlotterYRange()
         self.statusbar.showMessage(_('STATUSBAR_SCALE_CHANGED') + str([self.Yscale_min, self.Yscale_max]), 1000)
-
-
-    def onConnectButtonClick(self, baudrate : int=9600) -> None:
-        """
-            Opens connection to ackwonledge Arduino
-        """
-        if self.is_reading:
-            self.log.e(_('ERR_THREAD_RUNNING'))
-            return
-
-        port = self.ids['combobox_connected_ports'].currentText()
-        if port == 'no board':
-            self.log.e(_('CON_SOL_PORTS'))
-            return
-
-        try:
-            response = connection.NOISRProtocol.handshake(port, baudrate, timeout=1)
-            self.log.i(_('CON_ARDUINO_SAYS') + egg(response))
-        except Exception as error:
-            self.log.x(error)
 
 
     def updateArduinoPorts(self):
@@ -368,9 +366,9 @@ class NoiserGUI(QMainWindow):
         """
             Sets up environment when the user chooses another analog pin to read from
         """
-        self.reading_pin = self.groupbox.checkedId()
-        self.plotter.setTitle(f'Data from PIN A{self.reading_pin}')
-        self.statusbar.showMessage(_('STATUSBAR_PIN_CHANGED') + str(self.reading_pin), 1000)
+        self.selected_pin = self.groupbox.checkedId()
+        self.plotter.setTitle(f'Data from PIN A{self.selected_pin}')
+        self.statusbar.showMessage(_('STATUSBAR_PIN_CHANGED') + str(self.selected_pin), 1000)
 
 
     def createAnalyzer(self):
@@ -389,19 +387,22 @@ class NoiserGUI(QMainWindow):
         self.plotter.setLimits(xMin = 0, yMin = -12, yMax = 12)
         self.plotter.setMouseEnabled(x = True, y = False) 
 
-        vb = self.plotter.getViewBox()                     
-        vb.setAspectLocked(lock = False)            
-        vb.setAutoVisible(y = 1.0)                
+        vb = self.plotter.getViewBox()
+        vb.setAspectLocked(lock = False)
+        vb.setAutoVisible(y = 1.0)
         vb.enableAutoRange(axis = 'y', enable = True)
 
-        self.setPlotterRange()
+        self.setPlotterYRange()
+        self.setPlotterXRange()
+
         self.updateStabilizationDeviation()
 
         # TODO CONSIDERATIONS for 'essential mode
         #self.plotter.setDownsampling(auto=True)
 
-        self.buffer_deque_len = 50
+        self.buffer_deque_len = 50  # TODO enable to change this in options
         self.data_queue = deque(maxlen=self.buffer_deque_len)
+
         self.data_voltages_queue_clamp = deque(maxlen=self.buffer_deque_len)
         #self.data_queue_moving_average = deque(maxlen=deque_len +2)
         self.data_voltages_queue = deque(maxlen=self.buffer_deque_len)   # optimizing for speed
@@ -446,7 +447,7 @@ class NoiserGUI(QMainWindow):
         """
             Updates the plot with data
         """
-        new_time = self.times[-1] + (1 / self.serial_thread.rate)
+        new_time = self.times[-1] + (1 / self.serial_connection.serial_thread.rate)
 
         if self.groupSchedule.isChecked() and not self.timer.isActive()\
             and (self.comboStartAt.currentText() == 'right away' or self.is_signal_stabilized):
@@ -455,7 +456,6 @@ class NoiserGUI(QMainWindow):
             time = int(self.spinboxTime.value()) * unit_factor
             self.log.i(_('TIMER_START'))
             self.timer.start(time)
-
 
         self.data_queue.append((new_time, new_voltage))
         self.data_voltages_queue_clamp.append(self.clampValue(new_voltage))
@@ -466,11 +466,19 @@ class NoiserGUI(QMainWindow):
         if self.checkStabilization() != self.is_signal_stabilized:
             self.toggleStabilization()
 
+        if len(self.times) < 2: # TODO optimize this
+            return
+
         self.signal.setData(self.times, self.voltages)
         self.clamp_function.setData(self.times, self.data_voltages_queue_clamp)
 
+
+
         self.plotter.setYRange(self.Yscale_min, self.Yscale_max, padding=0)
-        self.plotter.setXRange(self.times[-20], self.times[-1], padding=0)
+        print(self.times[-min(self.display_memory, len(self.times))])
+        print(self.times[-1])
+        self.plotter.setXRange(self.times[-min(self.display_memory, len(self.times))], self.times[-1], padding=0)
+
         #self.label.setPos(self.x_data[-1], 1)
         #self.label.setText(f"Y = {self.y_data[-1]:.2f}")
 
@@ -493,6 +501,7 @@ class NoiserGUI(QMainWindow):
         return self.threshold_reference if value >= self.threshold_reference else 0
 
 
+    ## threshold
     def setThreshold(self):
         """
             Changes the threshold
@@ -515,6 +524,7 @@ class NoiserGUI(QMainWindow):
         self.threshold_reference = new_threshold
 
 
+    ## stabilization
     def toggleStabilization(self):
         """
             Updates the GUI and the curve according to stabilization change
@@ -533,22 +543,23 @@ class NoiserGUI(QMainWindow):
             Checks if the signal is stabilized
         """
         voltages_std_dev = np.std(self.data_voltages_queue)
-        return voltages_std_dev < self.stabilization_deviation
+        return voltages_std_dev < self.spinbox_stabilization_stddev
 
 
     def updateStabilizationDeviation(self):
         """
             Updates the stabilization value
         """
-        self.stabilization_deviation = self.ids['stabilization_deviation'].value()
+        self.spinbox_stabilization_stddev = self.ids['spinbox_stabilization_stddev'].value()
 
 
+    ## read rate
     def setReadRate(self, rate):
         """
             Changes the read rate from arduino
         """
         if self.is_reading:
-            self.serial_thread.rate = rate
+            self.serial_connection.serial_thread.rate = rate
 
 
     def saveTXT(self):

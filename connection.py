@@ -37,14 +37,14 @@ class NOISRProtocol(serial.Serial):
             A random number
     """
     def __init__(self, port: str, baudrate: int, timeout: int=1):
-        super().__init__(port, baudrate)
-        self.port = port
-        self.baudrate = baudrate
-        self.timeout = timeout
-        self.is_reading = False
+        super().__init__(port, baudrate, timeout=timeout)
+        self.serial_thread = None
+
+    def handshake(self, pin: int) -> int:
+        return NOISRProtocol.handshake(self.port, self.baudrate, pin, self.timeout)
 
     @staticmethod
-    def handshake(port: int, baudrate: int, pin: int=0, timeout: int=1) -> int:
+    def handshake(port: str, baudrate: int, pin: int, timeout: int=1) -> int:
         """
             Hanshakes Arduino
 
@@ -64,56 +64,63 @@ class NOISRProtocol(serial.Serial):
                         raise ConnectionTimeout(_('CON_ERR_TIMEOUT'))
                 else:
                     print("it was read")
-                
+
                 connection.write(pin.to_bytes(1, byteorder='big', signed=False))
-                
+
                 # Wait for Arduino to respond
-                timeout = time.time()
+                timeout = time.time() + 3
                 while not connection.readable():
-                    if time.time() - timeout > 3:
+                    if time.time() > timeout:
                         connection.write(CONTROLS['STOP'])
                         raise ConnectionTimeout(_('CON_ERR_TIMEOUT'))
                     pass
 
-                response = int.from_bytes(connection.read(1), byteorder='big')
-                if response:
-                    return int(response)
-            raise ReadFromSerialError('Invalid response from Serial')
+                return int.from_bytes(connection.read(1), byteorder='big')
         except (serial.serialutil.SerialException, TimeoutError):
             raise
 
-    @classmethod
-    def protocol(connection, command, timeout: int=3):
-        timeout = time.time() + 3   # waits for 3 seconds
-        connection.write(pin)
-        # now should wait for arduino to send a number
-        timeout = time.time() + 3
-        while connection.read() != CONTROLS['OK']:
-            if time.time() > timeout:
-                connection.write(CONTROLS['STOP'])
-                raise ConnectionTimeout(_('CON_ERR_TIMEOUT'))
-
-    def readFromPin(self, pin: int, read_rate : int, data_ready):
+    def startReading(self, pin: int, read_rate: int, data_ready, timeout: int=5):
         try:
-            serial_connection = serial.Serial(self.port, self.baudrate, timeout=1)
-            serial_thread = self.ReaderThread(serial_connection, read_rate)
-            serial_thread.data_ready.connect(data_ready)
+            self.serial_thread = NOISRProtocol.PinReaderThread2(self, read_rate)
+            self.serial_thread.data_ready.connect(data_ready)
 
-            serial_connection.write(CONTROLS['START'])
+            self.write(CONTROLS['START'])
 
             # wait for acknowledgement from Arduino for 5 seconds (timeout)
-            timeout = time.time() + 5
-            while serial_connection.read() != b'\x06':
-                if time.time() > timeout:
+            timer = time.time() + timeout
+            while self.read() != CONTROLS['OK']:
+                if time.time() > timer:
                     raise ConnectionTimeout(_('CON_ERR_TIMEOUT'))
 
-            pin = pin
-            serial_connection.write(pin.to_bytes(1, byteorder='little', signed=False))
+            self.write(pin.to_bytes(1, byteorder='little', signed=False))
 
-            serial_thread.start()
-            self.is_reading = True
+            self.serial_thread.start()
         except (ReadFromSerialError, serial.SerialException):
             raise
+
+    class PinReaderThread2(QThread):
+        """
+            Opens the serial to read asynchronosusly
+        """
+        data_ready = pyqtSignal(float)
+
+        def __init__(self, serial_connection, rate, parent=None):
+            super().__init__(parent)
+            self.serial_connection = serial_connection
+            self.rate = rate
+
+        def run(self):
+            while True:
+                if self.serial_connection.readable():
+                    analog_value = self.serial_connection.readline().decode().strip()
+                    self.data_ready.emit(float(analog_value))
+                QThread.msleep(1000 // self.rate)
+
+
+    def stopReading(self):
+        self.write(b'\x04')
+
+        self.serial_thread.terminate()
 
 
     class PinReaderThread(QThread):
@@ -247,29 +254,7 @@ def getPorts():
     pass
 
 
-def stopReadingPin(self, connection, port):
-    """
-        Stops reading input
-    """
-    # Send command to Arduino to stop sending analog values
-    connection.write(CONTROLS['STOP'])
-
-    self.btPlayPause.setText("Start")
-    self.is_reading = False
-    self.serial_thread.terminate()  # Stop the serial reader thread
-
-
-def openConnection(port):
-    """
-        Opens the connection with arduino through @arduinoPort
-    """
-    if bool(port):
-        try:
-            # https://pyserial.readthedocs.io/en/stable/pyserial_api.html
-            return serial.Serial(port, 9600, timeout=1)
-        except serial.SerialException:
-            raise Exception('Serial monitor not found!')
-
+# https://pyserial.readthedocs.io/en/stable/pyserial_api.html
 
 def info(connection):
     """
@@ -277,11 +262,10 @@ def info(connection):
     """
     pairsList = str(connection).split("(")[1].split(")")[
         0].split(",")      # remove special characters
-    # removes white spaces
     pairsList = [pair.strip() for pair in pairsList]
 
     parsedConnection = {}
-    for pair in pairsList:                                                  # splits into key-value pairs
+    for pair in pairsList:  # splits into key-value pairs
         key, value = pair.split("=")
         parsedConnection[key.strip()] = value.strip()
 

@@ -335,11 +335,11 @@ def ToolBar(self, toolbarModel, name):
         elif action['type'] == 'spinbox':
             doublespinBox = QSpinBox()
             doublespinBox.setStatusTip(action['status'])
-            doublespinBox.setValue(int(action['value']))
             if 'min' in action:
                 doublespinBox.setMinimum(int(action['min']))
             if 'max' in action:
                 doublespinBox.setMaximum(int(action['max']))
+            doublespinBox.setValue(int(action['value']))
             function = getattr(self, action['action'])
             doublespinBox.valueChanged.connect(function)
             if '@id' in action:

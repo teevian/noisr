@@ -28,6 +28,8 @@ __MAP_MESSAGES = {
         "CON_SERIAL_OK" : "Serial connection established! ",
         "CON_ARDUINO_SAYS" : "Handhake at Serial Monitor: Arduino says ",
         "CON_SERIAL_ERR" : "Serial not connected ",
+        "CON_HANDSHAKE_PORT" : "Trying to handshake board through port ",
+        "CON_CLOSED" : "Serial connection was closed!",
 
         "CON_PORTS" : "Checking connected boards through USB ports...",
         "CON_CLICK_AGAIN" : "The Arduino seems to be busy... try again in 2 seconds!",

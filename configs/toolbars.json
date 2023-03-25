@@ -140,7 +140,8 @@
                 "type" : "doublespinbox",
                 "@id" : "spinbox_threshold",
                 "name": "Threshold",
-                "setPrefix" : "Threshold: ",
+                "setPrefix" : "threshold: ",
+                "setSuffix" : "[V]",
                 "status" : "Threshold reference to be considered in numeric methods",
                 "value" : "1.40",
                 "min" : "-12.00",
@@ -151,9 +152,10 @@
             },
             {
                 "type" : "doublespinbox",
-                "@id" : "stabilization_deviation",
+                "@id" : "spinbox_stabilization_stddev",
                 "name": "Stabilization",
-                "setPrefix" : "Stabilization: ",
+                "setPrefix" : "stabilization σ: ",
+                "setSuffix" : "[V]",
                 "status": "Standard deviation to consider when checking for stabilization",
                 "value": "0.1",
                 "min": "0",
@@ -178,7 +180,7 @@
                 "status": "Sets the Y-scale minimum in the oscilloscope",
                 "value": "-1",
                 "min": "-12",
-                "action": "setPlotterRange"
+                "action": "setPlotterYRange"
             },
             {
                 "type": "spinbox",
@@ -189,7 +191,7 @@
                 "status": "Sets the Y-scale maximum in the oscilloscope",
                 "value": "4",
                 "max": "12",
-                "action": "setPlotterRange"
+                "action": "setPlotterYRange"
             },
             {
                 "type": "button",
@@ -198,6 +200,18 @@
                 "icon": "./data/icons/ic_autoscale.svg",
                 "status": "Auto-scales Y-axis according to the max-min values in queue",
                 "action": "onAutoScaleClick"
+            },
+            {
+                "type": "spinbox",
+                "@id": "spinbox_display_memory",
+                "name": "Display memory",
+                "setPrefix" : "Display memory: ",
+                "setSuffix" : " [pts]",
+                "status": "Number of data points displayed on the plot",
+                "value": "20",
+                "max": "50",
+                "min" : "1",
+                "action": "setPlotterXRange"
             }
         ]
     },
