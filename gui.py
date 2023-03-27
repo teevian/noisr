@@ -3,6 +3,7 @@
 
 # oscilloscope picotech.com/ ; hantek
 
+import analyzer
 import json, time, serial, csv
 import pyqtgraph as pg
 import factory, connection
@@ -85,8 +86,6 @@ class NoiserGUI(QMainWindow):
         self._createMainLayout()
 
         self.log.i(_('ENV_OK'))
-
-        self.getArduinoPorts()
         self.onConnectButtonClick()
 
     ############################
@@ -166,13 +165,15 @@ class NoiserGUI(QMainWindow):
                         self.ids['spinbox_read_rate'].value(),
                         self.update_plot)
 
+                    self.is_reading = True
                     self.__startReadingSetup()
                 except (connection.ReadFromSerialError, serial.SerialException) as err:
                     self.log.x(err)
         else:
             self.serial_connection.stopReading()
-            self.serial_connection.close()
+            #self.serial_connection.close()
 
+            self.is_reading = False
             self.__stopReadingSetup()
 
 
@@ -184,23 +185,21 @@ class NoiserGUI(QMainWindow):
             self.log.e(_('ERR_THREAD_RUNNING'))
             return
 
-        port = self.ids['combobox_connected_ports'].currentText()
-        if port == 'no board':
+        port = self.ids.get('combobox_connected_ports', {}).currentText()
+        if port == 'no board' or not port:
             self.log.e(_('CON_SOL_PORTS'))
             return
 
         try:
-            self.log.i(_('CON_HANDSHAKE_PORT') + str(self.selected_pin))
+            self.log.i(f'{_("CON_HANDSHAKE_PORT")}{self.selected_pin}')
             response = connection.NOISRProtocol.handshake(port, baudrate, self.selected_pin, timeout=1)
-            self.log.i(_('CON_ARDUINO_SAYS') + egg(response))
+            self.log.i(f'{_("CON_ARDUINO_SAYS")}{egg(response)}')
         except Exception as error:
             self.log.x(error)
 
 
     def __startReadingSetup(self):
         self.log.i(_('READ_START'))
-
-        self.is_reading = True
 
         self.btPlayPause.setText("STOP")
         self.statusbar.setStyleSheet('background-color: rgb(118, 178, 87);')
@@ -211,8 +210,6 @@ class NoiserGUI(QMainWindow):
     def __stopReadingSetup(self):
         self.log.i(_('READ_STOP'))
         self.log.i(_('CON_CLOSED'))
-
-        self.is_reading = False
 
         self.btPlayPause.setText('START')
         self.statusbar.setStyleSheet('background-color: rgb(0, 122, 204);')
@@ -277,17 +274,18 @@ class NoiserGUI(QMainWindow):
             Returns:
                 The list of ports connected to Arduino (or ['no board'] if it finds no connection)
         """
-        self.log.i(_('CON_PORTS'))
         try:
+            self.log.i(_('CON_PORTS'))
             ports = connection.getPorts()
+            self.log.v(f'{_("CON_OK_PORTS")}{ports}')
         except Exception as e:
             self.log.x(e)
+            ports = []
 
-        if ports:
-            self.log.v(_('CON_OK_PORTS') + str(ports))
-        else:
+        if not ports:
             self.log.e(_('CON_SOL_PORTS'))
             ports = [_('NO_BOARD')]
+
         return ports
 
 
@@ -380,17 +378,7 @@ class NoiserGUI(QMainWindow):
         self.analyzer.setStyleSheet("QTabWidget::pane { border: 0; }")
 
         ## plotter
-        self.plotter = pg.PlotWidget(useOpenGL=True)
-        self.plotter.setLabel('left', 'Voltage', units='V', size='18pt')
-        self.plotter.setLabel('bottom', 'Time', units='s', size='18pt')
-        self.plotter.showGrid(x=True, y=True, alpha=0.7)
-        self.plotter.setLimits(xMin = 0, yMin = -12, yMax = 12)
-        self.plotter.setMouseEnabled(x = True, y = False) 
-
-        vb = self.plotter.getViewBox()
-        vb.setAspectLocked(lock = False)
-        vb.setAutoVisible(y = 1.0)
-        vb.enableAutoRange(axis = 'y', enable = True)
+        self.plotter = analyzer.Plotter()
 
         self.setPlotterYRange()
         self.setPlotterXRange()
@@ -427,13 +415,9 @@ class NoiserGUI(QMainWindow):
         self.plotter.addItem(self.threshold_line)
 
         self.setThreshold()
-        
+
         ## table
-        self.table = QTableWidget(0, 4)
-        self.table.setStyleSheet('background-color: rgb(0, 0, 0);')
-        self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.setHorizontalHeaderLabels(['Time', 'Voltage', 'Moving Average', 'Comment'])
-        self.table.verticalHeader().setVisible(False)
+        self.table = analyzer.Table(0, 4)
 
         ## generates tabs compatible with analyzer board
         tabPlot = factory.AnalyzerTab(QHBoxLayout, self.plotter)
@@ -471,8 +455,6 @@ class NoiserGUI(QMainWindow):
 
         self.signal.setData(self.times, self.voltages)
         self.clamp_function.setData(self.times, self.data_voltages_queue_clamp)
-
-
 
         self.plotter.setYRange(self.Yscale_min, self.Yscale_max, padding=0)
         print(self.times[-min(self.display_memory, len(self.times))])
@@ -527,14 +509,20 @@ class NoiserGUI(QMainWindow):
     ## stabilization
     def toggleStabilization(self):
         """
-            Updates the GUI and the curve according to stabilization change
+        Toggles the signal stabilization and updates the GUI and curve accordingly.
         """
+        try:
+            current_time = str(self.data_queue[0])
+        except IndexError:
+            raise IndexError("Data queue is empty.")
+        
         if self.is_signal_stabilized:
             self.signal.setPen(pg.mkPen(color=(0, 122, 204), width=4))
-            self.log.i(_('SIGNAL_NOT_STABILIZED') + ' since ' + str(self.data_queue[0]))
+            self.log.i('Signal not stabilized since ' + current_time)
         else:
-            self.signal.setPen(pg.mkPen(color=(118, 178, 87),  width=4))
-            self.log.i(_('SIGNAL_STABILIZED') + ' since ' + str(self.data_queue[0]))
+            self.signal.setPen(pg.mkPen(color=(118, 178, 87), width=4))
+            self.log.i('Signal stabilized since ' + current_time)
+
         self.is_signal_stabilized = not self.is_signal_stabilized
 
 

@@ -5,6 +5,7 @@ import os
 import time
 import platform
 from msgid import _
+from threading import Lock
 import serial
 import serial.tools.list_ports  # should pip install esptool (?)
 
@@ -32,14 +33,11 @@ CONTROLS = {            # https://theasciicode.com.ar
 class NOISRProtocol(serial.Serial):
     """
         Class that interfaces with Arduino through Serial enclosed by a communication protocol
-
-        Returns:
-            A random number
     """
     def __init__(self, port: str, baudrate: int, timeout: int=1):
         super().__init__(port, baudrate, timeout=timeout)
         self.serial_thread = None
-
+    
     def handshake(self, pin: int) -> int:
         return NOISRProtocol.handshake(self.port, self.baudrate, pin, self.timeout)
 
@@ -56,14 +54,12 @@ class NOISRProtocol(serial.Serial):
                 connection.reset_input_buffer()
                 connection.write(CONTROLS['ENQUIRE'])
 
-                # waits for Arduino's acknowledgment for 2 seconds
-                timeout = time.time() + 2
+                # waits for Arduino's acknowledgment for 3 seconds
+                timeout = time.time() + 3
                 while connection.read(1) != CONTROLS['OK']:
                     if time.time() > timeout:
                         connection.write(CONTROLS['STOP'])
                         raise ConnectionTimeout(_('CON_ERR_TIMEOUT'))
-                else:
-                    print("it was read")
 
                 connection.write(pin.to_bytes(1, byteorder='big', signed=False))
 
@@ -81,47 +77,31 @@ class NOISRProtocol(serial.Serial):
 
     def startReading(self, pin: int, read_rate: int, data_ready, timeout: int=5):
         try:
-            self.serial_thread = NOISRProtocol.PinReaderThread2(self, read_rate)
+            self.serial_thread = NOISRProtocol.PinReaderThread(self, read_rate)
             self.serial_thread.data_ready.connect(data_ready)
 
             self.write(CONTROLS['START'])
 
             # wait for acknowledgement from Arduino for 5 seconds (timeout)
             timer = time.time() + timeout
-            while self.read() != CONTROLS['OK']:
+            read = None
+            while read != CONTROLS['OK']:
+                read = self.read()
                 if time.time() > timer:
                     raise ConnectionTimeout(_('CON_ERR_TIMEOUT'))
 
+            print(read)
+            print(pin)
             self.write(pin.to_bytes(1, byteorder='little', signed=False))
 
+            print("pin was given")
             self.serial_thread.start()
         except (ReadFromSerialError, serial.SerialException):
             raise
-
-    class PinReaderThread2(QThread):
-        """
-            Opens the serial to read asynchronosusly
-        """
-        data_ready = pyqtSignal(float)
-
-        def __init__(self, serial_connection, rate, parent=None):
-            super().__init__(parent)
-            self.serial_connection = serial_connection
-            self.rate = rate
-
-        def run(self):
-            while True:
-                if self.serial_connection.readable():
-                    analog_value = self.serial_connection.readline().decode().strip()
-                    self.data_ready.emit(float(analog_value))
-                QThread.msleep(1000 // self.rate)
-
-
+    
     def stopReading(self):
-        self.write(b'\x04')
-
-        self.serial_thread.terminate()
-
+        self.serial_thread.stop()
+        self.serial_thread.wait()
 
     class PinReaderThread(QThread):
         """
@@ -129,17 +109,30 @@ class NOISRProtocol(serial.Serial):
         """
         data_ready = pyqtSignal(float)
 
-        def __init__(self, serial_connection, rate, parent=None):
+        def __init__(self, serial_connection, rate: int, parent=None):
             super().__init__(parent)
             self.serial_connection = serial_connection
             self.rate = rate
+            self._should_run = True
+            self._lock = Lock()
+
+        def stop(self):
+            with self._lock:
+                self._should_run = False
 
         def run(self):
-            while True:
-                if self.serial_connection.readable():
-                    analog_value = self.serial_connection.readline().decode().strip()
-                    self.data_ready.emit(float(analog_value))
-                QThread.msleep(1000 // self.rate)
+            try:
+                while self._should_run:
+                    with self._lock:
+                        if self.serial_connection.readable():
+                            analog_value = self.serial_connection.readline().decode().strip()
+                            self.data_ready.emit(float(analog_value))
+                    self.msleep(1000 // self.rate)
+            except Exception as e:
+                raise e
+            finally:
+                self.serial_connection.write(CONTROLS['STOP'])
+                self.serial_connection.close()
 
 
 class NoPortError(Exception):
@@ -221,7 +214,7 @@ def getArduinoPortsOnLinux():
     """
         Returns:
             list: all the available serial ports on a Linux system
-        """
+    """
     return [os.path.join('/dev', file_name) for file_name in os.listdir('/dev') if file_name.startswith('ttyACM')]
 
 
