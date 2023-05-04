@@ -1,14 +1,12 @@
 #!/usr/bin/env python
 
-
-# oscilloscope picotech.com/ ; hantek
-
 import analyzer
 import json, time, serial, csv
 import pyqtgraph as pg
 import factory, connection
 import utils
 
+import array
 import numpy as np
 from collections import deque
 from platform import system
@@ -87,6 +85,10 @@ class NoiserGUI(QMainWindow):
 
         self.log.i(_('ENV_OK'))
         self.onConnectButtonClick()
+
+        self.bitsize    = 8      # 32 bit word
+        self.wordbit    = array.array('B', [0] * self.bitsize)
+        self.bitcounter = 0
 
     ############################
     # Inner classes
@@ -426,7 +428,7 @@ class NoiserGUI(QMainWindow):
         self.analyzer.addTab(tabPlot, QIcon('./data/icons/ic_read.svg'), 'Oscilloscope')
         self.analyzer.addTab(tabTable, QIcon('./data/icons/ic_sum'), 'Spreadsheet')
 
-
+    
     def update_plot(self, new_voltage):
         """
             Updates the plot with data
@@ -440,6 +442,17 @@ class NoiserGUI(QMainWindow):
             time = int(self.spinboxTime.value()) * unit_factor
             self.log.i(_('TIMER_START'))
             self.timer.start(time)
+
+        ## bit writter
+        #print(self.wordbit[self.bitcounter])
+        if self.bitcounter == self.bitsize:
+            print(self.statistic(self.wordbit))
+            self.bitcounter = 0
+        else:
+            self.wordbit[self.bitcounter] = 0 if new_voltage < self.threshold_reference else 1
+            # self.wordbit[self.bitcounter] = new_voltage << self.bitcounter | self.wordbit[self.bitcounter] & ~(1 << self.bitcounter)
+            self.bitcounter = self.bitcounter + 1
+
 
         self.data_queue.append((new_time, new_voltage))
         self.data_voltages_queue_clamp.append(self.clampValue(new_voltage))
@@ -457,8 +470,8 @@ class NoiserGUI(QMainWindow):
         self.clamp_function.setData(self.times, self.data_voltages_queue_clamp)
 
         self.plotter.setYRange(self.Yscale_min, self.Yscale_max, padding=0)
-        print(self.times[-min(self.display_memory, len(self.times))])
-        print(self.times[-1])
+        #print(self.times[-min(self.display_memory, len(self.times))])
+        #print(self.times[-1])
         self.plotter.setXRange(self.times[-min(self.display_memory, len(self.times))], self.times[-1], padding=0)
 
         #self.label.setPos(self.x_data[-1], 1)
@@ -472,6 +485,26 @@ class NoiserGUI(QMainWindow):
         if self.is_signal_stabilized:
             self.table.setItem(row, 3, QTableWidgetItem(str('Signal is stabilized;')))
         self.table.scrollToBottom()
+
+
+    def statistic(self, bitword):
+        """
+            returns a dictionary with basic statistics over the generated number
+        """
+        bit_string  = ''.join(str(bit) for bit in self.wordbit)
+        size        = len(bitword)
+        decimal     = int(bit_string, 2)
+        n_ones      = sum(self.wordbit)
+        n_zeroes    = self.bitsize - n_ones
+
+        return {
+            'n_bits' : size,
+            #'n_ones' : n_ones,
+            #'n_zeroes': n_zeroes,
+            'ratio_1t0' : float(n_ones) / size * 100,
+            'bin' : bit_string,
+            'dec' : decimal
+        }
 
 
     def movingAverage(self, n=3):

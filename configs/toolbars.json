@@ -89,9 +89,9 @@
                 "setPrefix" : "Read Rate: ",
                 "setSuffix" : " [Hz]",
                 "status": "Listens to the port at this rate",
-                "value": "10",
+                "value": "20",
                 "min": "1",
-                "max": "20",
+                "max": "100",
                 "action": "setReadRate"
             },
             {
