@@ -1,6 +1,6 @@
 # Noise Analyser
 
-A program developed by the NOISR to analyse in real time signals and noise.
+A program developed by the NOISR team to analyse in real time signals and noise.
 
 ## Reach us
 
